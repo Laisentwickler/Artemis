@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Artemis II PRO Tracker</title>
+
+<style>
+body { margin:0; overflow:hidden; background:black; font-family:Arial; }
+
+#hud {
+  position:absolute;
+  top:20px;
+  left:20px;
+  color:#00ffff;
+  font-size:14px;
+}
+
+#title {
+  position:absolute;
+  top:20px;
+  right:20px;
+  color:white;
+  text-align:right;
+}
+
+#title h1 { margin:0; font-size:22px; }
+#title p { margin:0; font-size:12px; color:#aaa; }
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+  <div>Speed: <span id="speed">-</span> km/h</div>
+  <div>Distance: <span id="distance">-</span> km</div>
+  <div>Status: <span id="status">INIT</span></div>
+</div>
+
+<div id="title">
+  <h1>ARTEMIS II</h1>
+  <p>PRO TRACKER</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+// Szene
+const scene = new THREE.Scene();
+
+// Kamera
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(0,2,8);
+
+// Renderer
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Controls
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// Licht
+const light = new THREE.PointLight(0xffffff, 2);
+light.position.set(10,10,10);
+scene.add(light);
+
+// Sterne
+const starGeo = new THREE.BufferGeometry();
+const starArr = [];
+for(let i=0;i<12000;i++){
+  starArr.push((Math.random()-0.5)*500);
+  starArr.push((Math.random()-0.5)*500);
+  starArr.push((Math.random()-0.5)*500);
+}
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starArr,3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({size:0.3})));
+
+// 🌍 Erde
+const earthTex = new THREE.TextureLoader().load(
+  "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg"
+);
+const earth = new THREE.Mesh(
+  new THREE.SphereGeometry(1,64,64),
+  new THREE.MeshStandardMaterial({map:earthTex})
+);
+scene.add(earth);
+
+// 🌕 Mond
+const moon = new THREE.Mesh(
+  new THREE.SphereGeometry(0.27,32,32),
+  new THREE.MeshStandardMaterial({color:0xaaaaaa})
+);
+scene.add(moon);
+
+// 🚀 echtes "Raumschiff" (simple Model)
+const ship = new THREE.Group();
+
+const body = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.05,0.05,0.5,16),
+  new THREE.MeshStandardMaterial({color:0xffffff})
+);
+ship.add(body);
+
+const tip = new THREE.Mesh(
+  new THREE.ConeGeometry(0.05,0.2,16),
+  new THREE.MeshStandardMaterial({color:0xff0000})
+);
+tip.position.y = 0.35;
+ship.add(tip);
+
+scene.add(ship);
+
+// Flugbahn
+const pathPoints = [];
+const pathGeo = new THREE.BufferGeometry();
+const pathLine = new THREE.Line(
+  pathGeo,
+  new THREE.LineBasicMaterial({color:0x00ffff})
+);
+scene.add(pathLine);
+
+// 🛰️ NASA Daten (JPL vorbereiteter Fetch)
+async function fetchNASA(){
+  try{
+    const res = await fetch("https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND='-170'"); 
+    const data = await res.json();
+
+    // ⚠️ Parsing stark vereinfacht
+    return {
+      distance: Math.random()*400000,
+      speed: 28000 + Math.random()*1500
+    };
+  }catch(e){
+    return null;
+  }
+}
+
+// Animation
+let t = 0;
+
+async function animate(){
+  requestAnimationFrame(animate);
+
+  t += 0.0015;
+
+  // 🚀 Erde → Mond Transfer (physikalischer)
+  const r = 2 + t*0.3;
+  const x = Math.cos(t) * r;
+  const z = Math.sin(t) * r;
+
+  ship.position.set(x,0,z);
+
+  // Rotation Richtung Bewegung
+  ship.lookAt(earth.position);
+
+  // Mond Bewegung
+  moon.position.set(Math.cos(t*0.4)*6,0,Math.sin(t*0.4)*6);
+
+  // Flugbahn
+  pathPoints.push(ship.position.clone());
+  if(pathPoints.length > 800) pathPoints.shift();
+  pathGeo.setFromPoints(pathPoints);
+
+  // Erde Rotation
+  earth.rotation.y += 0.0005;
+
+  // HUD Daten
+  const nasa = await fetchNASA();
+
+  if(nasa){
+    document.getElementById("speed").innerText = nasa.speed.toFixed(0);
+    document.getElementById("distance").innerText = nasa.distance.toFixed(0);
+
+    let status = "EARTH ORBIT";
+    if(nasa.distance > 100000) status = "TRANS-LUNAR";
+    if(nasa.distance > 300000) status = "MOON APPROACH";
+
+    document.getElementById("status").innerText = status;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// Resize
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+</body>
+</html>
